@@ -1,6 +1,6 @@
 #ifndef  ECHO_H
 #define  ECHO_H
-#include <main.h>
+#include "main.h"
 
 extern void pinConfigEcho();
 extern void setupEcho();

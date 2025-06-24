@@ -39,6 +39,28 @@ extern int input, vol_variable;
 extern int counter;
 extern uint8_t ADC_low, ADC_high;
 
+extern uint16_t delayBuffer[MAX_DELAY];
+extern uint32_t delayWritePointer;  
+extern uint32_t delayReadOffset; 
+extern uint32_t delayDepth;
+
+extern volatile int pot0_value; // Delay Time
+extern volatile int pot1_value; // Feedback amount
+extern volatile int pot2_value; // Master Volume
+
+extern volatile bool effectActive;
+
+/* Debouncing Variables*/
+extern volatile unsigned long lastFootswitchPressTime;
+extern volatile unsigned long lastToggleSwitchStateChange;
+extern const unsigned long DEBOUNCE_DELAY_MS; /*Button Debouncing and Counter Variables*/
+extern unsigned long lastPushButton1PressTime;
+extern volatile unsigned long lastPushButton2PressTime;
+
+/*Counter to periodically check pushbuttons (saves CPU in ISR)*/
+extern volatile int button_check_counter;
+extern const int BUTTON_CHECK_INTERVAL; // Check buttons every 500 samples
+ 
 /* Configure audio parameters.50 microseconds for 20kHz sample rate (1,000,000 / 20,000 = 50).
  * Adjust if needed, lower rate = more processing time, but worse quality.
  * Higher rate = less processing time, better quality but might not work on Uno*/
@@ -48,39 +70,4 @@ extern const long SAMPLE_RATE_MICROS;
 extern void adcSetup();
 extern void pinConfig ();
 extern void pmwSetup(void);
-
-/*********************************************FUNCTION DEFINITIONS****************************************************/
-/**
-* @brief: Configure hardware interfaces
-*/
-void pinConfig (void){
-  pinMode(FOOTSWITCH, INPUT_PULLUP);
-  pinMode(TOGGLE, INPUT_PULLUP);
-  pinMode(PUSHBUTTON_1, INPUT_PULLUP);
-  pinMode(PUSHBUTTON_2, INPUT_PULLUP);
-  pinMode(LED_EFFECT_ON, OUTPUT);
-}
-
-/**
-* @brief: Setup ADC. Configured to be reading automatically the hole time
-*/
-void adcSetup(void){
-  ADMUX = 0x60; // left adjust, adc0, internal vcc
-  ADCSRA = 0xe5; // turn on adc, ck/32, auto trigger
-  ADCSRB = 0x07; // t1 capture for trigger
-  DIDR0 = 0x01; // turn off digital inputs for adc0
-}
-
-/** 
-* @brief: Setup PWM. For more info about this config check the forum
-*/
-void pmwSetup(void){
-  TCCR1A = (((PWM_QTY - 1) << 5) | 0x80 | (PWM_MODE << 1));
-  TCCR1B = ((PWM_MODE << 3) | 0x11); // ck/1
-  TIMSK1 = 0x20; // Interrupt on capture interrupt
-  ICR1H = (PWM_FREQ >> 8);
-  ICR1L = (PWM_FREQ & 0xff);
-  DDRB |= ((PWM_QTY << 1) | 0x02); // Turn on outputs
-  sei(); // Turn on interrupts. Not really necessary with arduino
-}
 #endif

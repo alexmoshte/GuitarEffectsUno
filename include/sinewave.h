@@ -1,6 +1,7 @@
 #ifndef  SINEWAVE_H
 #define  SINEWAVE_H
-#include <main.h>
+#include "main.h"
+#include <math.h>
 
 extern void createSineTable(void);
 extern void pinConfigSinewave(void);

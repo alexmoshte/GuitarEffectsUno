@@ -1,28 +1,19 @@
-#include <main.h> 
-#include <math.h> 
+#include "sinewave.h"
 
 #define SINE_TABLE_SIZE 256// 256 samples * 2 bytes/uint16_t = 512 bytes
 
 /*Audio Configuration*/
-const float SAMPLE_RATE_HZ = 1000000.0 / SAMPLE_RATE_MICROS;
+static const float SAMPLE_RATE_HZ = 1000000.0 / SAMPLE_RATE_MICROS;
 
 /*Sine Wave Lookup Table*/
-uint16_t nSineTable[SINE_TABLE_SIZE]; // Stores 10-bit samples (0-1023)
+static int nSineTable[SINE_TABLE_SIZE]; // Stores 10-bit samples (0-1023)
 
 /*Sine Wave Generation Variables (volatile for ISR access)*/
-volatile float phase_accumulator = 0.0; // Floating-point accumulator for smooth phase
-volatile float frequency_step = 0.0;    // How much 'phase_accumulator' advances per sample
-volatile int generated_sample = 0;      // The current sine wave sample to output
+static float phase_accumulator = 0.0; // Floating-point accumulator for smooth phase
+static float frequency_step = 0.0;    // How much 'phase_accumulator' advances per sample
+static int generated_sample = 0;      // The current sine wave sample to output
 
-/*Effect Parameters*/
-volatile int pot0_value = 0; // Frequency control
-volatile int pot2_value = 0; // Amplitude/Volume control
-
-volatile bool generatorActive = false; 
-
-/*Button Debouncing Variables*/
-volatile unsigned long lastFootswitchPressTime = 0;
-const unsigned long DEBOUNCE_DELAY_MS = 100; 
+static volatile bool generatorActive = false; 
 
 /*********************************************FUNCTION DEFINITIONS****************************************************/
 /**

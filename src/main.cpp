@@ -1,10 +1,26 @@
-/*Conditionally compiles the choosen effect*/
-#include <main.h>
-#include <reverb.h>
-#include <echo.h>
-#include <octaver.h>
-#include <sinewave.h>
-#include <distortion.h>
+/*Conditionally compiles the choosen effect. Chosen from main.h*/
+#include "main.h"
+#include "reverb.h"
+#include "echo.h"
+#include "octaver.h"
+#include "sinewave.h"
+#include "distortion.h"
+
+uint16_t delayBuffer[MAX_DELAY];
+uint32_t delayWritePointer = 0; 
+
+/*Effect Parameters*/
+volatile int pot0_value = 0; // Delay Time
+volatile int pot1_value = 0; // Feedback amount
+volatile int pot2_value = 0; // Master Volume
+
+volatile bool effectActive = false;
+
+/* Debouncing Variables*/
+volatile unsigned long lastFootswitchPressTime = 0;
+unsigned long lastPushButton1PressTime = 0;
+volatile unsigned long lastPushButton2PressTime = 0;
+const unsigned long DEBOUNCE_DELAY_MS = 100;
 
 #ifdef NORMAL
 /*General variables*/
@@ -109,3 +125,37 @@ if (!digitalRead(PUSHBUTTON_2)) {
   OCR1BL = input; // Send out low byte
 }
 #endif
+
+/**
+* @brief: Configure hardware interfaces
+*/
+void pinConfig (void){
+  pinMode(FOOTSWITCH, INPUT_PULLUP);
+  pinMode(TOGGLE, INPUT_PULLUP);
+  pinMode(PUSHBUTTON_1, INPUT_PULLUP);
+  pinMode(PUSHBUTTON_2, INPUT_PULLUP);
+  pinMode(LED_EFFECT_ON, OUTPUT);
+}
+
+/**
+* @brief: Setup ADC. Configured to be reading automatically the hole time
+*/
+void adcSetup(void){
+  ADMUX = 0x60; // left adjust, adc0, internal vcc
+  ADCSRA = 0xe5; // turn on adc, ck/32, auto trigger
+  ADCSRB = 0x07; // t1 capture for trigger
+  DIDR0 = 0x01; // turn off digital inputs for adc0
+}
+
+/** 
+* @brief: Setup PWM. For more info about this config check the forum
+*/
+void pmwSetup(void){
+  TCCR1A = (((PWM_QTY - 1) << 5) | 0x80 | (PWM_MODE << 1));
+  TCCR1B = ((PWM_MODE << 3) | 0x11); // ck/1
+  TIMSK1 = 0x20; // Interrupt on capture interrupt
+  ICR1H = (PWM_FREQ >> 8);
+  ICR1L = (PWM_FREQ & 0xff);
+  DDRB |= ((PWM_QTY << 1) | 0x02); // Turn on outputs
+  sei(); // Turn on interrupts. Not really necessary with arduino
+}

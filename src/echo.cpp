@@ -1,17 +1,4 @@
-#include <echo.h>
-
-uint16_t delayBuffer[MAX_DELAY];
-unsigned int delayWritePointer = 0; 
-
-volatile int pot0_value = 0; // Delay Time
-volatile int pot1_value = 0; // Feedback amount
-volatile int pot2_value = 0; // Master Volume
-
-volatile bool effectActive = false;
-
-/* Debouncing Variables*/
-volatile unsigned long lastFootswitchPressTime = 0;
-const unsigned long DEBOUNCE_DELAY_MS = 100; 
+#include "echo.h"
 
 /*********************************************FUNCTION DEFINITIONS****************************************************/
 /**

@@ -1,13 +1,10 @@
-#include <reverb.h>
+#include "reverb.h"
 
-uint16_t delayBuffer[MAX_DELAY];
-uint32_t delayWritePointer = 0; 
 uint32_t delayReadOffset = 0; 
 uint32_t delayDepth;       
 
 volatile unsigned long lastToggleSwitchStateChange = 0;
 volatile unsigned long lastEffectButtonPressTime = 0;
-const unsigned long DEBOUNCE_DELAY_MS = 100; //(milliseconds)
 
 enum EffectMode {
   CLEAN = 0, 
@@ -19,13 +16,6 @@ enum EffectMode {
 const long SAMPLE_RATE_MICROS = 50; 
 
 volatile EffectMode currentEffect = CLEAN; // Initialized to CLEAN
-
-/* Effect Parameters. (volatile so ISR can read them)*/
-volatile int pot0_value = 0; // Delay amount/depth control
-volatile int pot1_value = 0; // Wet/dry mix or feedback control
-volatile int pot2_value = 0; // Master volume control
-
-volatile bool effectActive = false; // Controls overall bypass
 
 /*********************************************FUNCTION DEFINITIONS****************************************************/
 /**
@@ -121,7 +111,7 @@ else {
 /**
  * @brief: Audio Interrupt Service Routine (ISR) for processing audio samples with reverb effect. This function is called at a regular interval defined by Timer1
  */
-void audioIsrReverb(){
+void audioIsrReverb() {
   /*Read the analog input (guitar signal). This is a 10-bit value (0-1023)*/
   int inputSample = analogRead(AUDIO_IN);
   int outputSample = inputSample; // Initialize output as clean signal (pass-through)
@@ -135,44 +125,48 @@ void audioIsrReverb(){
     /*Apply the selected effect*/
     switch (currentEffect) {
       /* "Echo" (Reverb-like) Mode: Creates a decaying, diffuse sound.
-       Feedback amount derived from POT1 (0-1023 mapped to 0.0-0.95).
-       Max feedback is 0.95 to prevent the signal from infinitely oscillating (runaway)*/
-      case REVERB_ECHO_MODE:
+         Feedback amount derived from POT1 (0-1023 mapped to 0.0-0.95).
+         Max feedback is 0.95 to prevent the signal from infinitely oscillating (runaway)*/
+      case REVERB_ECHO_MODE: { // <-- ADDED CURLY BRACES
         float feedback = map(pot1_value, 0, 1023, 0, 95) / 100.0;
 
-        int delayedSample_Reverb = delayBuffer[delayReadPointer];  // Get the sample from the delay buffer at the read pointer.
-        int mixedSampleForBuffer = (int)(inputSample * (1.0 - feedback) + delayedSample_Reverb * feedback);  // Mix the current input with the delayed sample for the sample to be WRITTEN into the buffer.
-        
-        delayBuffer[delayWritePointer] = mixedSampleForBuffer;  // Write the new, mixed sample into the delay buffer.
-        
+        int delayedSample_Reverb = delayBuffer[delayReadPointer];
+        int mixedSampleForBuffer = (int)(inputSample * (1.0 - feedback) + delayedSample_Reverb * feedback);
+
+        delayBuffer[delayWritePointer] = mixedSampleForBuffer;
+
         /* Determine the final output sample: a blend of the dry input and the wet delayed signal.
-         The wet/dry mix is also controlled by POT1 for this mode*/
+           The wet/dry mix is also controlled by POT1 for this mode*/
         float wet_dry_mix = map(pot1_value, 0, 1023, 0, 100) / 100.0;
         outputSample = (int)(inputSample * (1.0 - wet_dry_mix) + delayedSample_Reverb * wet_dry_mix);
         break;
+      } // <-- CLOSING CURLY BRACE
 
-        /*"Delay" Mode: Creates distinct, repeating echoes.
-         Feedback amount derived from POT1 (0-1023 mapped to 0.0-0.95)*/
-        case DELAY_MODE:
+      /*"Delay" Mode: Creates distinct, repeating echoes.
+        Feedback amount derived from POT1 (0-1023 mapped to 0.0-0.95)*/
+      case DELAY_MODE: { // <-- ADDED CURLY BRACES
         float delayFeedback = map(pot1_value, 0, 1023, 0, 95) / 100.0;
 
         /*Get the delayed sample from the buffer*/
         int currentDelayedSample_Delay = delayBuffer[delayReadPointer];
 
         /* Calculate the new sample to store in the buffer.
-         This sample includes the current input plus a portion of the delayed signal (for repeats)*/
+           This sample includes the current input plus a portion of the delayed signal (for repeats)*/
         delayBuffer[delayWritePointer] = inputSample + (int)(currentDelayedSample_Delay * delayFeedback);
-        
+
         /*The final output sample is a simple sum of the dry input and the delayed signal*/
         outputSample = inputSample + currentDelayedSample_Delay;
         break;
-        case CLEAN:
-      default:
+      } // <-- CLOSING CURLY BRACE
+
+      case CLEAN:
+      default: { // <-- ADDED CURLY BRACES for consistency, though not strictly needed here
         outputSample = inputSample;
         break;
+      } // <-- CLOSING CURLY BRACE
     }
   }
-
+  
   /* Update Delay Buffer Write Pointer. Move the write pointer to the next position in the circular buffer.
    When it reaches the end of the buffer, it wraps around to the beginning*/
   delayWritePointer++;

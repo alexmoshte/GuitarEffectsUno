@@ -1,20 +1,7 @@
-#include <distortion.h> 
-
-/*Effect Parameters*/
-volatile int pot0_value = 0; // Distortion Threshold
-volatile int pot1_value = 0; // Pre-Gain
-volatile int pot2_value = 0; // Master Volume
+#include "distortion.h"
 
 /* This threshold will be applied to the centered 10-bit audio signal (-512 to 511)*/
 volatile int distortion_threshold_val = 250; // Initial threshold, adjustable by pots/buttons
-
-volatile bool effectActive = false; 
-
-/*Button Debouncing and Counter Variables*/
-volatile unsigned long lastFootswitchPressTime = 0;
-volatile unsigned long lastPushButton1PressTime = 0;
-volatile unsigned long lastPushButton2PressTime = 0;
-const unsigned long DEBOUNCE_DELAY_MS = 100; // Minimum time between button state changes
 
 /*Counter to periodically check pushbuttons (saves CPU in ISR)*/
 volatile int button_check_counter = 0;

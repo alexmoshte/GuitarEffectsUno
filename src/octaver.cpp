@@ -1,20 +1,8 @@
-#include <octaver.h>
-
-uint16_t delayBuffer[MAX_DELAY]; // Stores 10-bit samples (0-1023)
+#include "octaver.h"
 
 unsigned int write_pointer = 0; // Current write position in the buffer
 volatile float read_pointer_float = 0.0; // Floating-point read pointer for pitch shifting
 volatile float pitch_step = 1.0;  // How much read_pointer_float advances per sample (0.5 for octave down, 1.0 for original, 2.0 for octave up)
-
-volatile int pot0_value = 0; // Octave mode control
-volatile int pot1_value = 0; // Wet/Dry mix
-volatile int pot2_value = 0; // Master Volume
-
-volatile bool effectActive = false; 
-
-/*Debouncing Variables*/
-volatile unsigned long lastFootswitchPressTime = 0;
-const unsigned long DEBOUNCE_DELAY_MS = 100; // Minimum time between button state changes
 
 /*********************************************FUNCTION DEFINITIONS****************************************************/
 /**
