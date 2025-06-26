@@ -1,115 +1,100 @@
 #include "echo.h"
+#include <Arduino.h> 
 
 /*********************************************FUNCTION DEFINITIONS****************************************************/
 /**
- * @brief: Pin configuration for the reverb effect
+ * @brief: Pin configuration for the Echo effect.
+ * This function is primarily for any additional pins *unique* to the Echo module.
+ * Common pins (audio I/O, effect selection buttons, volume buttons, footswitch, LED)
+ * are configured in main.cpp's pinConfig().
  */
 void pinConfigEcho(){
-  pinMode(AUDIO_IN, INPUT);
-  pinMode(AUDIO_OUT_A, OUTPUT);
-  pinMode(AUDIO_OUT_B, OUTPUT);
-  pinMode(POT0, INPUT);
-  pinMode(POT1, INPUT);
-  pinMode(POT2, INPUT);
-  pinMode(FOOTSWITCH, INPUT_PULLUP);
-  pinMode(LED_EFFECT_ON, OUTPUT);  
+    // If there are any unique pins for Echo beyond those in main.cpp, configure them here.
+    // Example: pinMode(ECHO_SPECIFIC_PIN, OUTPUT);
 }
 
 /**
- * @brief: Setup function for the echo effect
+ * @brief: Setup function for the echo effect.
+ * Initializes the delay buffer to silence.
  */
 void setupEcho(){
-// pinConfigEcho();
-for (int i = 0; i < MAX_DELAY; i++) {
-delayBuffer[i] = 0;
-}
-  Timer1.initialize(SAMPLE_RATE_MICROS);
-  Timer1.attachInterrupt(audioIsrEcho);      
-  Serial.println("Echo Pedal Ready!");
+    // pinConfigEcho(); // No longer needed here, main.cpp handles general pins, and this is for additional.
+    for (int i = 0; i < MAX_DELAY; i++) { // Initialize delay buffer with silence
+        delayBuffer[i] = 0;
+    }  
+    Serial.println("Echo Pedal Ready!");
 }
 
 /**
- * @brief: Main loop for the echo effect
+ * @brief: Main loop for the echo effect.
+ * This function currently has no specific logic, as control (footswitch, volume, mode selection)
+ * is now handled universally in main.cpp. If the Echo effect ever needs non-time-critical
+ * adjustments (e.g., via another toggle or pushbutton unique to Echo), that logic would go here.
  */
 void loopEcho(){
-  /*To be used in the audioISR*/
-  pot0_value = analogRead(POT0);
-  pot1_value = analogRead(POT1);
-  pot2_value = analogRead(POT2);
-
-  /*Footswitch handling*/
-  if (digitalRead(FOOTSWITCH) == LOW) {
-    if (millis() - lastFootswitchPressTime > DEBOUNCE_DELAY_MS) {
-      lastFootswitchPressTime = millis();
-      effectActive = !effectActive; 
-
-      if (effectActive) {
-        Serial.println("Echo Effect ON");
-      } else {
-        Serial.println("Bypass");
-        for (int i = 0; i < MAX_DELAY; i++) {
-          delayBuffer[i] = 0;
-        }
-        delayWritePointer = 0;
-      }
-    }
-  }
-  digitalWrite(LED_EFFECT_ON, effectActive ? HIGH : LOW);
+    // No specific loop logic yet
 }
 
 /**
- * @brief: Audio Interrupt Service Routine (ISR) for processing audio samples with echo effect
+ * @brief: Audio processing function for Echo effect.
+ * This function is called by the universal ISR (TIMER1_CAPT_vect) from main.cpp.
+ * It applies the echo algorithm using fixed parameters.
+ * @param inputSample The raw 10-bit input audio sample (0-1023).
  */
-void audioIsrEcho() {
-  int inputSample = analogRead(AUDIO_IN); //10-bit value (0-1023)
-  int outputSample; 
+void processEchoAudio(int inputSample) {
+    int outputSample = inputSample; // Initialize output as clean signal (pass-through)
 
-  /*Echo Effect Processing*/
-  if (effectActive) {
-    /*Determine the current delay depth based on POT0*/
-    int currentDelayDepth = map(pot0_value, 0, 1023, 1, MAX_DELAY - 1);
+    if (effectActive) { // Only process effect if globally active (footswitch state)
+        // --- Fixed Effect Parameters (formerly POT0 and POT1) ---
+        // These constants are chosen to make the effect clearly perceivable.
+        const int fixedEchoDelayTimeValue = 600; // Value for delay time (maps to MAX_DELAY/1.7 approx)
+        const float fixedEchoFeedbackFactor = 0.65; // 65% feedback (0.0 to 0.98 range)
 
-    /*Calculate the read pointer for the circular buffer*/
-    int delayReadPointer = (delayWritePointer + (MAX_DELAY - currentDelayDepth)) % MAX_DELAY;
+        /* Determine the current delay depth based on a fixed value, not potentiometer.
+         * Maps fixedEchoDelayTimeValue (e.g., 600) to a valid delay offset (1 to MAX_DELAY - 1).
+         */
+        int currentDelayDepth = map(fixedEchoDelayTimeValue, 0, 1023, 1, MAX_DELAY - 1);
 
-    // Get the previously stored (delayed) sample from the buffer.
-    int delayedSample = delayBuffer[delayReadPointer];
+        /* Calculate the read pointer for the circular buffer */
+        int delayReadPointer = (delayWritePointer + (MAX_DELAY - currentDelayDepth)) % MAX_DELAY;
 
-    // Determine feedback amount from POT1 (0-1023 mapped to 0.0-0.98).
-    // Max feedback is 0.98 to prevent infinite oscillations (runaway).
-    float feedbackFactor = map(pot1_value, 0, 1023, 0, 98) / 100.0;
+        // Get the previously stored (delayed) sample from the buffer.
+        int delayedSample = delayBuffer[delayReadPointer];
 
-    /*The core echo algorithm*/
-    int newSampleForBuffer = (int)(inputSample * (1.0 - feedbackFactor) + delayedSample * feedbackFactor);
-    
-    /*Write the new sample into the delay buffer at the current write pointer*/
-    delayBuffer[delayWritePointer] = newSampleForBuffer;
+        /* The core echo algorithm: current input plus a portion of the delayed signal */
+        // For classic echo, the new sample *in the buffer* is the input + feedback of delayed sample
+        // This makes distinct repeats.
+        int newSampleForBuffer = inputSample + (int)(delayedSample * fixedEchoFeedbackFactor);
+        
+        /* Write the new sample into the delay buffer at the current write pointer */
+        delayBuffer[delayWritePointer] = newSampleForBuffer;
 
-    /*For the final output, mix the dry input signal with the wet delayed signal*/
-    outputSample = inputSample + delayedSample; // Simple summing.
-  } 
-  else {
-    outputSample = inputSample;
-  }
+        /* For the final output, mix the dry input signal with the wet delayed signal */
+        outputSample = inputSample + delayedSample; // Simple summing for a clear echo
+    }
+    else { // If effect is not active (bypassed via footswitch)
+        outputSample = inputSample; // Pass through clean signal
+        // Always clear buffer when bypassing to prevent lingering sound
+        for (int i = 0; i < MAX_DELAY; i++) {
+            delayBuffer[i] = 0;
+        }
+        delayWritePointer = 0;
+    }
 
-  /*Update Delay Buffer Write Pointer.Wraps to the beginning when it reaches the end*/
-  delayWritePointer++;
-  if (delayWritePointer >= MAX_DELAY) {
-    delayWritePointer = 0;
-  }
+    /* Update Delay Buffer Write Pointer. Wraps to the beginning when it reaches the end */
+    delayWritePointer++;
+    if (delayWritePointer >= MAX_DELAY) {
+        delayWritePointer = 0;
+    }
 
-  /*Final Output Processing*/
-  outputSample = constrain(outputSample, 0, 1023); // Constrain the processed audio sample to the valid 10-bit range (0-1023).
+    /* Final Output Processing */
+    outputSample = constrain(outputSample, 0, 1023); // Constrain the processed audio sample to the valid 10-bit range (0-1023).
 
-  /*Apply master volume control from POT2*/
-  float volume_factor = pot2_value / 1023.0;
-  outputSample = (int)(outputSample * volume_factor);
+    /* Apply global master volume controlled by PUSHBUTTON_1/2 */
+    float volume_factor = pot2_value / 1023.0; // pot2_value is controlled by pushbuttons in main.cpp
+    outputSample = (int)(outputSample * volume_factor);
 
-  /*Split the final 10-bit outputSample into two 8-bit PWM values for Pins 9 and 10*/
-  int pwm9Value = outputSample / 4;
-  int pwm10RawFine = outputSample % 4;
-  int pwm10Value = map(pwm10RawFine, 0, 3, 0, 255);
-
-  analogWrite(AUDIO_OUT_A, pwm9Value);
-  analogWrite(AUDIO_OUT_B, pwm10Value);
+    /* Split the final 10-bit outputSample into two 8-bit PWM values for Pins 9 and 10 */
+    analogWrite(AUDIO_OUT_A, outputSample / 4); // Coarse 8 bits
+    analogWrite(AUDIO_OUT_B, map(outputSample % 4, 0, 3, 0, 255)); // Fine 2 bits
 }

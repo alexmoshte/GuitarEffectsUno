@@ -1,9 +1,11 @@
-#ifndef  DISTORTION_H
-#define  DISTORTION_H
-#include "main.h"
+#ifndef DISTORTION_H
+#define DISTORTION_H
+#include "main.h" // Includes common definitions and variables
 
-extern void pinConfigDistortion(void);
-extern void setupDistortion(void);
-extern void loopDistortion(void);
-extern void audioIsrDistortion(void);
+// Function declarations for the Distortion module
+extern void pinConfigDistortion(void);     // Configures any distortion-specific pins
+extern void setupDistortion(void);         // Initializes the Distortion effect
+extern void loopDistortion(void);          // Distortion-specific loop logic (e.g., non-ISR tasks)
+extern void processDistortionAudio(int inputSample); // Audio processing function, called by universal ISR
+
 #endif

@@ -1,200 +1,151 @@
 #include "reverb.h"
-
-uint32_t delayReadOffset = 0; 
-uint32_t delayDepth;       
-
-volatile unsigned long lastToggleSwitchStateChange = 0;
-volatile unsigned long lastEffectButtonPressTime = 0;
-
-enum EffectMode {
-  CLEAN = 0, 
-  REVERB_ECHO_MODE, 
-  DELAY_MODE,    
-  NUM_EFFECTS // Counting the number of effects available    
-};
-
-const long SAMPLE_RATE_MICROS = 50; 
-
-volatile EffectMode currentEffect = CLEAN; // Initialized to CLEAN
+#include <Arduino.h>   
 
 /*********************************************FUNCTION DEFINITIONS****************************************************/
 /**
- * @brief: Pin configuration for the reverb effect
+ * @brief: Pin configuration for the reverb effect.
+ * This is primarily for any additional pins *unique* to the reverb module.
+ * Common pins (audio I/O, effect selection buttons, volume buttons, footswitch, LED)
+ * are configured in main.cpp's pinConfig().
  */
 void pinConfigReverb() {
-  pinMode(AUDIO_IN, INPUT);
-  pinMode(AUDIO_OUT_A, OUTPUT);
-  pinMode(AUDIO_OUT_B, OUTPUT);
-  pinMode(POT0, INPUT);
-  pinMode(POT1, INPUT);
-  pinMode(POT2, INPUT);
-  pinMode(TOGGLE, INPUT_PULLUP); 
-  pinMode(FOOTSWITCH, INPUT_PULLUP);
-  pinMode(LED_EFFECT_ON, OUTPUT);
+    // Additional pin configuration
 }
 
 /**
- * @brief: Setup function for the reverb effect
+ * @brief: Setup function for the reverb effect.
+ * Initializes the delay buffer to silence.
  */
 void setUpReverb(){
-  // pinConfigReverb();
-  for (int i = 0; i < MAX_DELAY; i++) {    // Initialize delay buffer
-    delayBuffer[i] = 0;
-  }
-  Timer1.initialize(SAMPLE_RATE_MICROS); // 50ms interval interruots 
-  Timer1.attachInterrupt(audioIsrReverb);
-  
-  Serial.println("Reverb Pedal Ready!");
+    for (int i = 0; i < MAX_DELAY; i++) { // Initialize delay buffer with silence
+        delayBuffer[i] = 0;
+    }    
+    Serial.println("Reverb Pedal Ready!");
 }
 
 /**
- * @brief: Main loop for the reverb effect
+ * @brief: Main loop for the reverb effect.
+ * This function now *only* handles the TOGGLE switch for sub-mode selection (Reverb/Echo vs. Delay).
+ * It no longer reads potentiometers for parameters, as those are now fixed constants
+ * or controlled globally by pushbuttons.
  */
 void loopReverb(){
-  pot0_value = analogRead(POT0);
-  pot1_value = analogRead(POT1);
-  pot2_value = analogRead(POT2);
+    /* Handles the TOGGLE switch for Reverb sub-modes*/
+    if (effectActive && (currentActiveMode == REVERB_MODE || currentActiveMode == DELAY_MODE)) {
+        bool toggleState = digitalRead(TOGGLE); 
+        /*toggleState HIGH - REVERB_ECHO_MODE; otherwise - DELAY_MODE*/
+        EffectMode targetMode = (toggleState == HIGH) ? REVERB_MODE : DELAY_MODE;
 
-/*Handle the Effect ON/OFF button*/
-  if (digitalRead(FOOTSWITCH) == LOW) {
-    /*Debouncing: Only register a press if enough time has passed since the last one*/
-    if (millis() - lastEffectButtonPressTime > DEBOUNCE_DELAY_MS) {
-      lastEffectButtonPressTime = millis();
-      effectActive = !effectActive; // Toggle the overall effect state (ON/OFF).
-      if (effectActive) {
-        Serial.println("Reverb Effect ON");
-      } 
-      else {
-        Serial.println("Bypass");
-        /*Clear the delay buffer to prevent any lingering sound from previous effects*/
-        for (int i = 0; i < MAX_DELAY; i++) {
-          delayBuffer[i] = 0;
+        /*Check if the current active mode (global) is different from the target mode determined by the switch*/
+        if (currentActiveMode != targetMode) {
+            /*Debounce for toggle switch state changes*/
+            if (millis() - lastToggleSwitchStateChange > DEBOUNCE_DELAY_MS) {
+                lastToggleSwitchStateChange = millis();
+                currentActiveMode = targetMode; 
+                /*Print status to Serial*/
+                if (currentActiveMode == REVERB_MODE) {
+                    Serial.println("Reverb Sub-Mode: REVERB (Echo)");
+                }
+                else {
+                    Serial.println("Reverb Sub-Mode: DELAY (Repeats)");
+                }
+                /*Clear buffer and reset pointer when sub-mode changes to prevent audio artifacts*/
+                for (int i = 0; i < MAX_DELAY; i++) {
+                    delayBuffer[i] = 0;
+                }
+                delayWritePointer = 0; 
+            }
         }
-        delayWritePointer = 0; // Reset write pointer.
-      }
     }
-  }
-
-/*Handle the Toggle Switch for Effect Mode Selection. Applies if the main effect is active*/
-if (effectActive) {
-  bool toggleState = digitalRead(TOGGLE);
-  /*toggleState HIGH - REVERB_ECHO_MODE; otherwise - DELAY_MODE*/
-  EffectMode targetMode = (toggleState == HIGH) ? REVERB_ECHO_MODE : DELAY_MODE;
-  /*Check if the current effect mode is different from the target mode determined by the switch*/
-  if (currentEffect != targetMode) {
-      // Debounce for toggle switch state changes.
-      if (millis() - lastToggleSwitchStateChange > DEBOUNCE_DELAY_MS) {
-          lastToggleSwitchStateChange = millis();
-          currentEffect = targetMode; // Update the current effect mode.
-            // Print status to Serial.
-          if (currentEffect == REVERB_ECHO_MODE) {
-              Serial.println("Mode: REVERB (Echo)");
-          } 
-          else {
-              Serial.println("Mode: DELAY (Repeats)");
-          }
-          // Clear buffer and reset pointer when mode changes to prevent audio artifacts.
-          for (int i = 0; i < MAX_DELAY; i++) {
-            delayBuffer[i] = 0;
-          }
-          delayWritePointer = 0; // Reset pointer.
-      }
-  }
-  digitalWrite(LED_EFFECT_ON, HIGH); // Turn LED on when any effect is active.
-}
-else {
-  currentEffect = CLEAN; // If the main effect is off, force "Clean" mode.
-  digitalWrite(LED_EFFECT_ON, LOW); // Turn LED off when effect is bypassed.
-}
 }
 
 /**
- * @brief: Audio Interrupt Service Routine (ISR) for processing audio samples with reverb effect. This function is called at a regular interval defined by Timer1
+ * @brief: Audio processing function for Reverb/Delay effect.
+ * This function is called by the universal ISR (TIMER1_CAPT_vect) from main.cpp.
+ * It applies the selected audio effect based on 'currentActiveMode'.
+ * Potentiometer values are now replaced with constant values for effect parameters.
+ * @param inputSample The raw 10-bit input audio sample (0-1023).
  */
-void audioIsrReverb() {
-  /*Read the analog input (guitar signal). This is a 10-bit value (0-1023)*/
-  int inputSample = analogRead(AUDIO_IN);
-  int outputSample = inputSample; // Initialize output as clean signal (pass-through)
+void processReverbAudio(int inputSample) {
+    int outputSample = inputSample; // Initialize output as clean signal (pass-through)
 
-  if (effectActive) {
-    /*This determines the length of the delay/reverb*/
-    delayReadOffset = map(pot0_value, 0, 1023, 1, MAX_DELAY - 1);
-    /*Ensures the read pointer is 'delayReadOffset' samples behind the 'delayWritePointer'*/
-    int delayReadPointer = (delayWritePointer + (MAX_DELAY - delayReadOffset)) % MAX_DELAY;
+    if (effectActive) { // Only process effect if globally active (footswitch state)
+        const int fixedDelayTimeValue = 500; // Value for delay time (maps to MAX_DELAY/2 approx)
+        const float fixedFeedbackValue = 0.75; // 75% feedback (0.0 to 0.95 range)
+        const float fixedWetDryMix = 0.70; // 70% wet for reverb-like mode
 
-    /*Apply the selected effect*/
-    switch (currentEffect) {
-      /* "Echo" (Reverb-like) Mode: Creates a decaying, diffuse sound.
-         Feedback amount derived from POT1 (0-1023 mapped to 0.0-0.95).
-         Max feedback is 0.95 to prevent the signal from infinitely oscillating (runaway)*/
-      case REVERB_ECHO_MODE: { // <-- ADDED CURLY BRACES
-        float feedback = map(pot1_value, 0, 1023, 0, 95) / 100.0;
+        /* Calculate delayReadOffset based on a fixed value, not potentiometer.
+         * Maps fixedDelayTimeValue (e.g., 500) to a valid delay offset (1 to MAX_DELAY - 1).
+         * This value will be MAX_DELAY * (fixedDelayTimeValue/1023) roughly.
+         */
+        delayReadOffset = map(fixedDelayTimeValue, 0, 1023, 1, MAX_DELAY - 1);
+        
+        /* Ensures the read pointer is 'delayReadOffset' samples behind the 'delayWritePointer'
+         * This calculates the position to read from in the circular buffer.
+         */
+        int delayReadPointer = (delayWritePointer + (MAX_DELAY - delayReadOffset)) % MAX_DELAY;
 
-        int delayedSample_Reverb = delayBuffer[delayReadPointer];
-        int mixedSampleForBuffer = (int)(inputSample * (1.0 - feedback) + delayedSample_Reverb * feedback);
+        /* Apply the selected effect based on currentActiveMode (global variable managed by loopReverb/main) */
+        switch (currentActiveMode) {
+            case REVERB_MODE: {
+                /* "Echo" (Reverb-like) Mode: Creates a decaying, diffuse sound. */
+                int delayedSample_Reverb = delayBuffer[delayReadPointer];
+                /*Mix current input with delayed sample for the buffer itself (feedback loop for smearing)*/
+                int mixedSampleForBuffer = (int)(inputSample * (1.0 - fixedFeedbackValue) + delayedSample_Reverb * fixedFeedbackValue);
 
-        delayBuffer[delayWritePointer] = mixedSampleForBuffer;
+                delayBuffer[delayWritePointer] = mixedSampleForBuffer; // Store the mixed sample back into the buffer
 
-        /* Determine the final output sample: a blend of the dry input and the wet delayed signal.
-           The wet/dry mix is also controlled by POT1 for this mode*/
-        float wet_dry_mix = map(pot1_value, 0, 1023, 0, 100) / 100.0;
-        outputSample = (int)(inputSample * (1.0 - wet_dry_mix) + delayedSample_Reverb * wet_dry_mix);
-        break;
-      } // <-- CLOSING CURLY BRACE
+                /* Determine the final output sample: a blend of the dry input and the wet delayed signal. */
+                outputSample = (int)(inputSample * (1.0 - fixedWetDryMix) + delayedSample_Reverb * fixedWetDryMix);
+                break;
+            }
 
-      /*"Delay" Mode: Creates distinct, repeating echoes.
-        Feedback amount derived from POT1 (0-1023 mapped to 0.0-0.95)*/
-      case DELAY_MODE: { // <-- ADDED CURLY BRACES
-        float delayFeedback = map(pot1_value, 0, 1023, 0, 95) / 100.0;
+            case DELAY_MODE: {
+                /* "Delay" Mode: Creates distinct, repeating echoes. */
+                int currentDelayedSample_Delay = delayBuffer[delayReadPointer];
 
-        /*Get the delayed sample from the buffer*/
-        int currentDelayedSample_Delay = delayBuffer[delayReadPointer];
+                /* Calculate the new sample to store in the buffer.
+                 * This sample includes the current input plus a portion of the delayed signal (for repeats)
+                 */
+                delayBuffer[delayWritePointer] = inputSample + (int)(currentDelayedSample_Delay * fixedFeedbackValue);
 
-        /* Calculate the new sample to store in the buffer.
-           This sample includes the current input plus a portion of the delayed signal (for repeats)*/
-        delayBuffer[delayWritePointer] = inputSample + (int)(currentDelayedSample_Delay * delayFeedback);
+                /* The final output sample is a simple sum of the dry input and the delayed signal */
+                outputSample = inputSample + currentDelayedSample_Delay;
+                break;
+            }
 
-        /*The final output sample is a simple sum of the dry input and the delayed signal*/
-        outputSample = inputSample + currentDelayedSample_Delay;
-        break;
-      } // <-- CLOSING CURLY BRACE
-
-      case CLEAN:
-      default: { // <-- ADDED CURLY BRACES for consistency, though not strictly needed here
-        outputSample = inputSample;
-        break;
-      } // <-- CLOSING CURLY BRACE
+            case CLEAN_MODE: 
+            default: { 
+                outputSample = inputSample;     
+                for (int i = 0; i < MAX_DELAY; i++) {
+                    delayBuffer[i] = 0;
+                }
+                delayWritePointer = 0;
+                break;
+            }
+        }
+    } 
+    else { 
+        outputSample = inputSample; 
+        for (int i = 0; i < MAX_DELAY; i++) {
+            delayBuffer[i] = 0;
+        }
+        delayWritePointer = 0;
     }
-  }
-  
-  /* Update Delay Buffer Write Pointer. Move the write pointer to the next position in the circular buffer.
-   When it reaches the end of the buffer, it wraps around to the beginning*/
-  delayWritePointer++;
-  if (delayWritePointer >= MAX_DELAY) {
-    delayWritePointer = 0;
-  }
+    /* Update Delay Buffer Write Pointer. */
+    delayWritePointer++;
+    if (delayWritePointer >= MAX_DELAY) {
+        delayWritePointer = 0;
+    }
 
-  /*Final Output Processing*/
-  outputSample = constrain(outputSample, 0, 1023); // Constrain the processed audio sample to the valid 10-bit range (0-1023).
+    /* Final Output Processing */
+    outputSample = constrain(outputSample, 0, 1023); // Constrain to valid 10-bit range
 
-  /* Apply master volume control from POT2*/
-  float volume_factor = pot2_value / 1023.0;
-  outputSample = (int)(outputSample * volume_factor);
+    /* Apply global master volume controlled by PUSHBUTTON_1/2 */
+    float volume_factor = pot2_value / 1023.0; // pot2_value is controlled by pushbuttons in main.cpp
+    outputSample = (int)(outputSample * volume_factor);
 
-  /*Split the final 10-bit outputSample into two 8-bit PWM values*/
-
-  /*AUDIO_OUT_A (Pin 9, with 4.7kΩ resistor): Controls the more significant 8 bits.
-  Divide the 10-bit sample by 4 (i.e., right shift by 2 bits) to get a 0-255 range*/
-  int pwm9Value = outputSample / 4;
-
-  /* PWM_OUT_PIN_FINE (Pin 10, with 1.2MΩ resistor): Controls the less significant 2 bits.
-  Get the remainder when dividing by 4 (this gives 0, 1, 2, or 3)*/
-  int pwm10RawFine = outputSample % 4;
-
-  /*Map this 0-3 range to the full 0-255 PWM range for Pin 10*/
-  int pwm10Value = map(pwm10RawFine, 0, 3, 0, 255);
-
-  /*Write the calculated PWM values to the respective output pins*/
-  analogWrite(AUDIO_OUT_A, pwm9Value);
-  analogWrite(AUDIO_OUT_B, pwm10Value);
+    /* Write the calculated PWM values to the respective output pins for higher resolution */
+    analogWrite(AUDIO_OUT_A, outputSample / 4); // Coarse 8 bits
+    analogWrite(AUDIO_OUT_B, map(outputSample % 4, 0, 3, 0, 255)); // Fine 2 bits
 }
