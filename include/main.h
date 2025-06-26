@@ -4,8 +4,8 @@
 #include <TimerOne.h> 
 
 /*Can be chosen independently*/
-// #define NORMAL
-// #define OCTAVER
+#define NORMAL
+#define OCTAVER
 
 /*Enable effect by uncommenting. One at a time! */
 // #define REVERB
