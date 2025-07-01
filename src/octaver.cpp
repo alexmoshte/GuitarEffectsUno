@@ -1,67 +1,59 @@
 #include "octaver.h"
 #include <Arduino.h>
 
+// Global variables (declared as extern in main.h, defined in main.cpp)
+// No need to redefine them here.
+
 /*********************************************FUNCTION DEFINITIONS****************************************************/
-/**
- * @brief: Pin configuration for the Octaver effect.
- * This is primarily for any additional pins *unique* to the Octaver module.
- * Common pins are configured in main.cpp's pinConfig().
- */
 void pinConfigOctaver() {
-    //Extra pin configurations
+    // No specific pins for Octaver, common pins configured in main.cpp
 }
 
-/**
- * @brief: Setup function for the Octaver effect.
- * Performs any initializations required for the Octaver.
- */
 void setupOctaver(){
     Serial.println("Octaver Pedal Ready!");
 }
 
-/**
- * @brief: Main loop for the Octaver effect.
- * This function handles any non-time-critical logic specific to the Octaver.
- * Currently, it's a placeholder.
- */
 void loopOctaver(){
-    // No loop logic yet
+    // No specific loop logic for Octaver, controls handled in main.cpp
 }
 
 /**
  * @brief: Audio processing function for Octaver effect.
- * This function is called by the universal ISR (TIMER1_CAPT_vect) from main.cpp.
- * Currently, it implements a simple pass-through with global master volume.
- * This is where the actual octaver algorithm would be implemented.
+ * Currently a placeholder, but processes centered floating-point samples.
  * @param inputSample The raw 10-bit input audio sample (0-1023).
  */
 void processOctaverAudio(int inputSample) {
-    int outputSample = inputSample; // Start with the clean input sample
+    float outputSampleFloat; // Use float for processing
+    float centered_input = (float)inputSample - 511.5; // Center input to -511.5 to 511.5
 
-    if (effectActive) { // Only apply effect if globally active (footswitch state)
-        // --- Octaver Algorithm Placeholder ---
-        // This is where your octaver logic would go.
-        // For demonstration, it's a simple pass-through.
-        // Example (very basic down-octave using integer division - not good audio!):
-        // outputSample = inputSample / 2;
-        // Or to mix it: outputSample = (inputSample + (inputSample / 2)) / 2;
+    if (effectActive) {
+        // --- OCTAVER ALGORITHM PLACEHOLDER ---
+        // This is where your actual Octaver DSP would go.
+        // For a simple test, you could mix a very basic down-pitched signal.
+        // A true octaver requires complex algorithms (e.g., zero-crossing detection, wave shaping).
+        // For now, it behaves as a clean pass-through with volume.
+        
+        outputSampleFloat = centered_input; // Placeholder: currently just passes through centered signal
+        // Example: very crude half-wave rectifier for a simple 'fuzz' or sub-octave like sound
+        // if (centered_input < 0) centered_input = 0; // Half-wave rectification
+        // outputSampleFloat = centered_input;
 
-        // For a perceivable constant effect without full algorithm,
-        // you could add a subtle modulation or a fixed simple pitch shift here
-        // (but proper octavers are complex).
-        // For now, it will simply pass through unless a more complex algorithm is added.
     } else {
-        outputSample = inputSample; // Pass through clean signal if effect is bypassed
+        outputSampleFloat = centered_input; // Pass through clean signal if effect is bypassed
     }
 
-    /* Final Output Processing */
-    outputSample = constrain(outputSample, 0, 1023); // Constrain to valid 10-bit range
+    // --- Final Output Processing ---
+    // Re-bias the processed sample to 0-1023 range
+    int finalOutputSample = (int)(outputSampleFloat + 511.5);
 
-    /* Apply global master volume controlled by PUSHBUTTON_1/2 */
-    float volume_factor = pot2_value / 1023.0; // pot2_value is controlled by pushbuttons in main.cpp
-    outputSample = (int)(outputSample * volume_factor);
+    // Apply global master volume controlled by PUSHBUTTON_1/2
+    float volume_factor = pot2_value / 1023.0;
+    finalOutputSample = (int)(finalOutputSample * volume_factor);
 
-    /* Write the calculated PWM values to the respective output pins for higher resolution */
-    analogWrite(AUDIO_OUT_A, outputSample / 4); // Coarse 8 bits
-    analogWrite(AUDIO_OUT_B, map(outputSample % 4, 0, 3, 0, 255)); // Fine 2 bits
+    // Constrain the final output to the valid 10-bit range (0-1023)
+    finalOutputSample = constrain(finalOutputSample, 0, 1023);
+
+    // Split for dual PWM output
+    analogWrite(AUDIO_OUT_A, finalOutputSample / 4);
+    analogWrite(AUDIO_OUT_B, map(finalOutputSample % 4, 0, 3, 0, 255));
 }

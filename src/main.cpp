@@ -5,189 +5,182 @@
 #include "distortion.h"
 #include "sinewave.h"
 
-int input_sample;
+int input_raw_sample;
 uint8_t ADC_low, ADC_high;
 
 uint16_t delayBuffer[MAX_DELAY]; 
 uint32_t delayWritePointer = 0;
 uint32_t delayReadOffset;
-uint32_t delayDepth; 
+uint32_t delayDepth;
 
-/*Initialized to a mid-range value (0-1023)*/
-volatile int pot2_value = 512; // 
+int counter = 0; // For volume control logic
 
-/*Global effect ON/OFF state (controlled by FOOTSWITCH)*/
+volatile int pot2_value = 512; //initialized to mid-range (0-1023)
+
 volatile bool effectActive = false; 
+volatile EffectMode currentActiveMode = NORMAL_MODE; // Initially set, will be updated by setup
+volatile EffectMode lastSelectedMode = NORMAL_MODE;  // Stores the last non-CLEAN effect mode
 
-/* Debouncing Variables - Universal for all buttons */
+/*Initializing debouncing Variables*/
 volatile unsigned long lastFootswitchPressTime = 0;
 volatile unsigned long lastToggleSwitchStateChange = 0;
-const unsigned long DEBOUNCE_DELAY_MS = 100; 
+const unsigned long DEBOUNCE_DELAY_MS = 100;
 volatile unsigned long lastPushButton1PressTime = 0;
 volatile unsigned long lastPushButton2PressTime = 0;
-volatile unsigned long lastSelectNormalPressTime = 0;  
-volatile unsigned long lastSelectEffectButtonA2PressTime = 0; 
-volatile unsigned long lastSelectOctaverPressTime = 0; 
+volatile unsigned long lastSelectNormalPressTime = 0;
+volatile unsigned long lastSelectEffectButtonA2PressTime = 0;
+volatile unsigned long lastSelectOctaverPressTime = 0;
 
 /* Counter to periodically check pushbuttons (for volume control) */
 volatile int button_check_counter = 0;
-const int BUTTON_CHECK_INTERVAL = 100; 
+const int BUTTON_CHECK_INTERVAL = 100;
 
 const long SAMPLE_RATE_MICROS = 50;
-
-/*Universal current effect mode, starts in NORMAL_MODE by default*/
-volatile EffectMode currentActiveMode = NORMAL_MODE;
 
 void setup() {
     Serial.begin(9600);
 
-    /* Configure core hardware for audio input/output*/
-    pinConfig(); 
-    adcSetup();  
-    pmwSetup();  
+    pinConfig(); // Configure all I/O pins
+    adcSetup();  // Configure ADC
+    pmwSetup();  // Configure PWM and Timer1 ISR
 
-    /*Initialize effect-specific components based on selected effect*/
+    // Initialize specific effect modules
     #ifdef REVERB
-    setUpReverb(); 
-    currentActiveMode = REVERB_MODE; 
+    setUpReverb();
+    lastSelectedMode = REVERB_ECHO_MODE; // Default startup mode if REVERB compiled
     #elif defined(ECHO)
     setupEcho();
-    currentActiveMode = ECHO_MODE; 
+    lastSelectedMode = ECHO_MODE;
     #elif defined(OCTAVER)
-    setupOctaver(); 
-    currentActiveMode = OCTAVER_MODE; 
+    setupOctaver();
+    lastSelectedMode = OCTAVER_MODE;
     #elif defined(DISTORTION)
     setupDistortion();
-    currentActiveMode = DISTORTION_MODE; 
-    #elif defined(SINEWAVE) 
+    lastSelectedMode = DISTORTION_MODE;
+    #elif defined(SINEWAVE)
     setupSinewave();
-    currentActiveMode = SINEWAVE_MODE; 
+    lastSelectedMode = SINEWAVE_MODE;
     #else
-    currentActiveMode = NORMAL_MODE;
+    lastSelectedMode = NORMAL_MODE; // Default if no specific effect is compiled
     #endif
+
+    // Initial state after setup: go to lastSelectedMode unless FOOTSWITCH is pressed for CLEAN
+    currentActiveMode = lastSelectedMode;
+    effectActive = true; // Assume effect is active initially, can be overridden by footswitch
 
     Serial.println("Arduino Audio Pedal Ready!");
 }
 
 void loop() {
-    
-    /*LED OFF when FOOTSWITCH is NOT pressed (HIGH), ON when pressed (LOW)*/
-    bool footswitchState = digitalRead(FOOTSWITCH);
-    effectActive = (footswitchState == LOW); // effectActive true if footswitch is pressed (LOW), false if not pressed (HIGH)
-    digitalWrite(LED_EFFECT_ON, effectActive ? HIGH : LOW); 
-
-    /*Volume Control via PUSHBUTTON_1 and PUSHBUTTON_2. Controls 'pot2_value' globally, which acts as master volume*/
-    if (digitalRead(PUSHBUTTON_1) == LOW) { 
-        if (millis() - lastPushButton1PressTime > DEBOUNCE_DELAY_MS) {
-            lastPushButton1PressTime = millis();
-            /*Ensure volume doesn't exceed max 10-bit value*/
-            if (pot2_value < 1023) { // 
-                pot2_value = constrain(pot2_value + 20, 0, 1023); //Increase volume
-                Serial.print("Volume: "); Serial.println(pot2_value);
-            }
+    // --- Momentary Global Bypass (FOOTSWITCH) ---
+    //FOOTSWITCH is pressed (LOW), force CLEAN_MODE. Otherwise, run the last selected effect*/
+    if (digitalRead(FOOTSWITCH) == LOW) { // FOOTSWITCH IS PRESSED
+        // Debounce for the initial press
+        if (millis() - lastFootswitchPressTime > DEBOUNCE_DELAY_MS) {
+            lastFootswitchPressTime = millis(); // Update timestamp only if debounced
+            // No action needed here beyond setting currentActiveMode
         }
+        currentActiveMode = CLEAN_MODE; // Force bypass
+        effectActive = false; // Indicate effect is not active
+        digitalWrite(LED_EFFECT_ON, LOW); // LED OFF when in clean mode via footswitch
+    } else { // FOOTSWITCH IS NOT PRESSED (HIGH)
+        currentActiveMode = lastSelectedMode; // Revert to last selected effect
+        effectActive = true; // Indicate effect is active
+        digitalWrite(LED_EFFECT_ON, HIGH); // LED ON when effect is active
     }
 
-    if (digitalRead(PUSHBUTTON_2) == LOW) { 
-        if (millis() - lastPushButton2PressTime > DEBOUNCE_DELAY_MS) {
-            lastPushButton2PressTime = millis();
-            /* Ensure volume doesn't go below min*/
-            if (pot2_value > 0) { //
-                pot2_value = constrain(pot2_value - 20, 0, 1023); // Decrease volume
-                Serial.print("Volume: "); Serial.println(pot2_value);
-            }
-        }
-    }
+    // --- Momentary Effect Selection/Activation via A1, A2, A3 ---
+    // These buttons override the FOOTSWITCH if pressed.
+    bool buttonA1Pressed = (digitalRead(SELECT_NORMAL_BUTTON) == LOW);
+    bool buttonA2Pressed = (digitalRead(SELECT_EFFECT_BUTTON_A2) == LOW);
+    bool buttonA3Pressed = (digitalRead(SELECT_OCTAVER_BUTTON) == LOW);
 
-    /*Effect Mode Selection via digital buttons. Selects NORMAL_MODE*/
-    if (digitalRead(SELECT_NORMAL_BUTTON) == LOW) { // Active LOW
-        if (millis() - lastSelectNormalPressTime > DEBOUNCE_DELAY_MS) {
+    // If any selection button is pressed, it takes precedence over FOOTSWITCH and activates its effect momentarily.
+    if (buttonA1Pressed || buttonA2Pressed || buttonA3Pressed) {
+        // Debounce for A1 button
+        if (buttonA1Pressed && (millis() - lastSelectNormalPressTime > DEBOUNCE_DELAY_MS)) {
             lastSelectNormalPressTime = millis();
-            if (currentActiveMode != NORMAL_MODE) {
-                currentActiveMode = NORMAL_MODE;
-                Serial.println("Mode Selected: NORMAL");
-                for (int i = 0; i < MAX_DELAY; i++) {
-                    delayBuffer[i] = 0;
-                }
-                delayWritePointer = 0;
-            }
+            lastSelectedMode = NORMAL_MODE; // Set as last selected
+            Serial.println("Momentary Mode: NORMAL");
+            currentActiveMode = NORMAL_MODE;
+            effectActive = true;
+            digitalWrite(LED_EFFECT_ON, HIGH);
         }
-    }
-
-    /*Selects REVERB_MODE, ECHO_MODE, DISTORTION_MODE, OR SINEWAVE_MODE*/
-    if (digitalRead(SELECT_EFFECT_BUTTON_A2) == LOW) { 
-        if (millis() - lastSelectEffectButtonA2PressTime > DEBOUNCE_DELAY_MS) {
+        // Debounce for A2 button (Reverb/Echo/Distortion/Sinewave)
+        if (buttonA2Pressed && (millis() - lastSelectEffectButtonA2PressTime > DEBOUNCE_DELAY_MS)) {
             lastSelectEffectButtonA2PressTime = millis();
-            /*Button's behavior depends on which effect is defined at compile time*/
             #ifdef REVERB
-            if (currentActiveMode != REVERB_MODE && currentActiveMode != DELAY_MODE) {
-                currentActiveMode = REVERB_ECHO_MODE; // Default to REVERB_MODE
-                Serial.println("Mode Selected: REVERB (Echo)");
-                for (int i = 0; i < MAX_DELAY; i++) {
-                    delayBuffer[i] = 0;
-                }
-                delayWritePointer = 0;
-            }
+            lastSelectedMode = REVERB_ECHO_MODE;
+            Serial.println("Momentary Mode: REVERB (Echo)");
+            currentActiveMode = REVERB_ECHO_MODE;
             #elif defined(ECHO)
-            if (currentActiveMode != ECHO_MODE) {
-                currentActiveMode = ECHO_MODE;
-                Serial.println("Mode Selected: ECHO");
-                for (int i = 0; i < MAX_DELAY; i++) {
-                    delayBuffer[i] = 0;
-                }
-                delayWritePointer = 0;
-            }
+            lastSelectedMode = ECHO_MODE;
+            Serial.println("Momentary Mode: ECHO");
+            currentActiveMode = ECHO_MODE;
             #elif defined(DISTORTION)
-            if (currentActiveMode != DISTORTION_MODE) {
-                currentActiveMode = DISTORTION_MODE;
-                Serial.println("Mode Selected: DISTORTION");
-                for (int i = 0; i < MAX_DELAY; i++) { 
-                    delayBuffer[i] = 0;
-                }
-                delayWritePointer = 0;
-            }
-            #elif defined(SINEWAVE) 
-            if (currentActiveMode != SINEWAVE_MODE) {
-                currentActiveMode = SINEWAVE_MODE;
-                Serial.println("Mode Selected: SINEWAVE");.
-                for (int i = 0; i < MAX_DELAY; i++) {
-                    delayBuffer[i] = 0;
-                }
-                delayWritePointer = 0;
-            }
+            lastSelectedMode = DISTORTION_MODE;
+            Serial.println("Momentary Mode: DISTORTION");
+            currentActiveMode = DISTORTION_MODE;
+            #elif defined(SINEWAVE)
+            lastSelectedMode = SINEWAVE_MODE;
+            Serial.println("Momentary Mode: SINEWAVE");
+            currentActiveMode = SINEWAVE_MODE;
             #endif
+            effectActive = true;
+            digitalWrite(LED_EFFECT_ON, HIGH);
         }
-    }
-
-    /*Selects OCTAVER_MODE*/
-    if (digitalRead(SELECT_OCTAVER_BUTTON) == LOW) { 
-        if (millis() - lastSelectOctaverPressTime > DEBOUNCE_DELAY_MS) {
+        // Debounce for A3 button (Octaver)
+        if (buttonA3Pressed && (millis() - lastSelectOctaverPressTime > DEBOUNCE_DELAY_MS)) {
             lastSelectOctaverPressTime = millis();
-            // Only switch if OCTAVER is enabled for compilation
             #ifdef OCTAVER
-            if (currentActiveMode != OCTAVER_MODE) {
-                currentActiveMode = OCTAVER_MODE;
-                Serial.println("Mode Selected: OCTAVER");
-                for (int i = 0; i < MAX_DELAY; i++) { // Octaver might use a buffer, so clear for safety
-                    delayBuffer[i] = 0;
-                }
-                delayWritePointer = 0;
-            }
+            lastSelectedMode = OCTAVER_MODE;
+            Serial.println("Momentary Mode: OCTAVER");
+            currentActiveMode = OCTAVER_MODE;
             #endif
+            effectActive = true;
+            digitalWrite(LED_EFFECT_ON, HIGH);
         }
+
+        // When any effect selection button is pressed, always clear delay buffer
+        // to prevent sound artifacts from previous modes.
+        for (int i = 0; i < MAX_DELAY; i++) {
+            delayBuffer[i] = 0;
+        }
+        delayWritePointer = 0;
+
+    } else { // No effect selection button is pressed
+        // If no momentary button is pressed, effectActive and currentActiveMode
+        // are determined by the FOOTSWITCH state, as set at the start of loop().
+        // Nothing to do here explicitly, as it was handled already.
     }
 
-    /*Effect-specific loop functions*/
+
+    // --- Effect-specific loop functions ---
+    // These functions now primarily handle sub-mode selection (like REVERB's TOGGLE)
+    // and any other non-time-critical logic specific to their effect.
+    // They are called only if their respective #define is active.
     #ifdef REVERB
-    loopReverb(); 
+    // If the current active mode is a REVERB sub-mode (set by A2 or lastSelectedMode),
+    // then allow its loop function to manage its internal TOGGLE switch.
+    if (currentActiveMode == REVERB_ECHO_MODE || currentActiveMode == DELAY_MODE) {
+        loopReverb();
+    }
     #elif defined(ECHO)
-    loopEcho();
+    if (currentActiveMode == ECHO_MODE) {
+        loopEcho();
+    }
     #elif defined(OCTAVER)
-    loopOctaver(); 
+    if (currentActiveMode == OCTAVER_MODE) {
+        loopOctaver();
+    }
     #elif defined(DISTORTION)
-    loopDistortion();
+    if (currentActiveMode == DISTORTION_MODE) {
+        loopDistortion();
+    }
     #elif defined(SINEWAVE)
-    loopSinewave();
+    if (currentActiveMode == SINEWAVE_MODE) {
+        loopSinewave();
+    }
     #endif
 }
 
@@ -203,35 +196,39 @@ ISR(TIMER1_CAPT_vect)
     ADC_low = ADCL;
     ADC_high = ADCH;
     /* Construct the 10-bit input sample (0-1023) from ADC high and low bytes. */
-    input_sample = (ADC_high << 8) | ADC_low;
-
+    input_raw_sample = (ADC_high << 8) | ADCL; // Ensure ADCL is used correctly
+    /*Apply master volume control to the raw input sample*/
+    volumeControl();
+    input_raw_sample = map(input_raw_sample, 0, 1024, 0, pot2_value);
     // Dispatch the input sample to the active effect's audio processing function
     switch (currentActiveMode) {
         case NORMAL_MODE:
-            processNormalAudio(input_sample);
+            processNormalAudio(input_raw_sample);
             break;
-            /*Both REVERB_ECHO_MODE and DELAY_MODE use processReverbAudio*/
-        case REVERB_MODE: // 
-        case DELAY_MODE:       
-            processReverbAudio(input_sample);
+        case REVERB_ECHO_MODE:
+        case DELAY_MODE:
+            processReverbAudio(input_raw_sample);
             break;
         case ECHO_MODE:
-            processEchoAudio(input_sample);
+            processEchoAudio(input_raw_sample);
             break;
         case OCTAVER_MODE:
-            processOctaverAudio(input_sample);
+            processOctaverAudio(input_raw_sample);
             break;
         case DISTORTION_MODE:
-            processDistortionAudio(input_sample);
+            processDistortionAudio(input_raw_sample);
             break;
-        case SINEWAVE_MODE: 
-            processSinewaveAudio();
+        case SINEWAVE_MODE:
+            processSinewaveAudio(input_raw_sample); // Pass raw input, though generator may ignore
             break;
-        case CLEAN_MODE: 
+        case CLEAN_MODE: // Explicit CLEAN_MODE selected via effect bypass logic or momentary release
         default:
-            int output_val_default = constrain(input_sample, 0, 1023);
-            analogWrite(AUDIO_OUT_A, output_val_default / 4); // Coarse 8 bits
-            analogWrite(AUDIO_OUT_B, map(output_val_default % 4, 0, 3, 0, 255)); // Fine 2 bits
+            // Simple pass-through. Apply master volume here too for consistency.
+            int output_val_clean = input_raw_sample;
+            // output_val_clean = (int)(output_val_clean * (pot2_value / 1023.0));
+            // output_val_clean = constrain(output_val_clean, 0, 1023);
+            analogWrite(AUDIO_OUT_A, output_val_clean / 4);
+            analogWrite(AUDIO_OUT_B, map(output_val_clean % 4, 0, 3, 0, 255));
             break;
     }
 }
@@ -243,6 +240,8 @@ ISR(TIMER1_CAPT_vect)
  * @param input_val The raw 10-bit input audio sample (0-1023).
  */
 void processNormalAudio(int input_val) {
+    // For NORMAL_MODE, we simply pass the signal through and apply volume.
+    // No complex DSP or centering needed if it's just bypass with volume.
     int output_val = input_val;
 
     // Apply master volume controlled by PUSHBUTTON_1/2
@@ -267,9 +266,12 @@ void pinConfig (void){
     pinMode(TOGGLE, INPUT_PULLUP);
     pinMode(PUSHBUTTON_1, INPUT_PULLUP);
     pinMode(PUSHBUTTON_2, INPUT_PULLUP);
+
+    // Configure former POT pins as digital inputs for effect selection
     pinMode(SELECT_NORMAL_BUTTON, INPUT_PULLUP);
-    pinMode(SELECT_EFFECT_BUTTON_A2, INPUT_PULLUP); 
+    pinMode(SELECT_EFFECT_BUTTON_A2, INPUT_PULLUP);
     pinMode(SELECT_OCTAVER_BUTTON, INPUT_PULLUP);
+
     pinMode(LED_EFFECT_ON, OUTPUT);
 }
 
@@ -305,8 +307,28 @@ void pmwSetup(void){
     ICR1L = (PWM_FREQ & 0xff); // Low byte of ICR1
 
     // DDRB: Data Direction Register for Port B. Set pins 9 and 10 as outputs.
-    // This directly sets DDRB |= (1<<PB1) | (1<<PB2) for pins 9 and 10.
     DDRB |= ((PWM_QTY << 1) | 0x02);
 
-    sei(); // Enable global interrupts (also done by Arduino's init, but explicit is clear)
+    sei(); // Enable global interrupts
 }
+
+/**
+ * @brief: Periodically checks the volume control push-buttons (PUSHBUTTON_1 and PUSHBUTTON_2).
+ * This function is called in the main loop to adjust the global volume (pot2_value).
+ * It uses a counter to limit checks to every 100 iterations for efficiency.
+ */
+void volumeControl(void) {
+    // The push-buttons are checked now:
+counter++; //to save resources, the push-buttons are checked every 100 times.
+if(counter==100)
+{
+counter=0;
+if (!digitalRead(PUSHBUTTON_1)) {
+  if (pot2_value<1024) pot2_value=pot2_value+1; //increase the vol
+    }
+if (!digitalRead(PUSHBUTTON_2)) {
+  if (pot2_value>0) pot2_value=pot2_value-1; //decrease vol
+    }
+}
+}
+
