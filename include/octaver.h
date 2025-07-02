@@ -5,6 +5,6 @@
 extern void pinConfigOctaver(void);
 extern void setupOctaver(void);
 extern void loopOctaver(void);
-extern void processOctaverAudio(int inputSample); // Corrected signature
+extern void processOctaverAudio(int inputSample); 
 
 #endif

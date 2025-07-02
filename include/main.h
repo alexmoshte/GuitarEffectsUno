@@ -3,14 +3,13 @@
 #include <Arduino.h>
 #include <TimerOne.h> 
 
-
 #define NORMAL
 #define OCTAVER
 
 /*Enable effect by uncommenting. One at a time! */
 // #define REVERB
-#define ECHO
-// #define DISTORTION
+// #define ECHO
+#define DISTORTION
 // #define SINEWAVE 
 
 /*Hardware interface resource definitions*/
@@ -62,6 +61,7 @@ enum EffectMode {
     SINEWAVE_MODE,          // Sinewave generator
     NUM_EFFECTS_ENUM        // Helper to count total modes (always last)
 };
+
 extern volatile bool effectActive; // Global ON/OFF state (true if any effect is running, false for clean bypass)
 extern volatile EffectMode lastSelectedMode; // Stores the last selected effect mode (not CLEAN_MODE)
 

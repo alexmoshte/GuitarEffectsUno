@@ -15,7 +15,7 @@ uint32_t delayDepth;
 
 int counter = 0; // For volume control logic
 
-volatile int pot2_value = 512; //initialized to mid-range (0-1023)
+volatile int pot2_value = 512; // Initialized to mid-range (0-1023)
 
 volatile bool effectActive = false; 
 volatile EffectMode currentActiveMode = NORMAL_MODE; // Initially set, will be updated by setup
@@ -45,15 +45,17 @@ void setup() {
     pmwSetup();  // Configure PWM and Timer1 ISR
 
     // Initialize specific effect modules
+    #ifdef OCTAVER
+    setupOctaver();
+    lastSelectedMode = OCTAVER_MODE;
+    #endif
+
     #ifdef REVERB
     setUpReverb();
     lastSelectedMode = REVERB_ECHO_MODE; // Default startup mode if REVERB compiled
     #elif defined(ECHO)
     setupEcho();
     lastSelectedMode = ECHO_MODE;
-    #elif defined(OCTAVER)
-    setupOctaver();
-    lastSelectedMode = OCTAVER_MODE;
     #elif defined(DISTORTION)
     setupDistortion();
     lastSelectedMode = DISTORTION_MODE;
@@ -72,25 +74,33 @@ void setup() {
 }
 
 void loop() {
-    // --- Momentary Global Bypass (FOOTSWITCH) ---
-    //FOOTSWITCH is pressed (LOW), force CLEAN_MODE. Otherwise, run the last selected effect*/
+    /* --- Momentary Global Bypass (FOOTSWITCH) ---
+       FOOTSWITCH is pressed (LOW), force CLEAN_MODE. Otherwise, run the last selected effect*/
     if (digitalRead(FOOTSWITCH) == LOW) { // FOOTSWITCH IS PRESSED
         // Debounce for the initial press
         if (millis() - lastFootswitchPressTime > DEBOUNCE_DELAY_MS) {
             lastFootswitchPressTime = millis(); // Update timestamp only if debounced
-            // No action needed here beyond setting currentActiveMode
         }
+        Serial.print("Footswitch: "); Serial.println(digitalRead(FOOTSWITCH));
         currentActiveMode = CLEAN_MODE; // Force bypass
+        Serial.print("currentActiveMode: "); Serial.println(currentActiveMode);
         effectActive = false; // Indicate effect is not active
+        Serial.print("effectActive: "); Serial.println(effectActive);
         digitalWrite(LED_EFFECT_ON, LOW); // LED OFF when in clean mode via footswitch
-    } else { // FOOTSWITCH IS NOT PRESSED (HIGH)
+        Serial.println("Footswitch pressed, LED OFF");
+    } 
+    else { // FOOTSWITCH IS NOT PRESSED (HIGH)
         currentActiveMode = lastSelectedMode; // Revert to last selected effect
         effectActive = true; // Indicate effect is active
+        Serial.print("effectActive: "); Serial.println(effectActive);
         digitalWrite(LED_EFFECT_ON, HIGH); // LED ON when effect is active
+        Serial.println("Footswitch released, LED ON");
     }
 
-    // --- Momentary Effect Selection/Activation via A1, A2, A3 ---
-    // These buttons override the FOOTSWITCH if pressed.
+     volumeControl(); // Check volume control push-buttons every 100 iterations
+
+    /* --- Momentary Effect Selection/Activation via A1, A2, A3 ---
+    // These buttons override the FOOTSWITCH if pressed*/
     bool buttonA1Pressed = (digitalRead(SELECT_NORMAL_BUTTON) == LOW);
     bool buttonA2Pressed = (digitalRead(SELECT_EFFECT_BUTTON_A2) == LOW);
     bool buttonA3Pressed = (digitalRead(SELECT_OCTAVER_BUTTON) == LOW);
@@ -100,6 +110,7 @@ void loop() {
         // Debounce for A1 button
         if (buttonA1Pressed && (millis() - lastSelectNormalPressTime > DEBOUNCE_DELAY_MS)) {
             lastSelectNormalPressTime = millis();
+            Serial.println("A1 Pressed");
             lastSelectedMode = NORMAL_MODE; // Set as last selected
             Serial.println("Momentary Mode: NORMAL");
             currentActiveMode = NORMAL_MODE;
@@ -109,6 +120,7 @@ void loop() {
         // Debounce for A2 button (Reverb/Echo/Distortion/Sinewave)
         if (buttonA2Pressed && (millis() - lastSelectEffectButtonA2PressTime > DEBOUNCE_DELAY_MS)) {
             lastSelectEffectButtonA2PressTime = millis();
+            Serial.println("A2 Pressed");
             #ifdef REVERB
             lastSelectedMode = REVERB_ECHO_MODE;
             Serial.println("Momentary Mode: REVERB (Echo)");
@@ -132,6 +144,7 @@ void loop() {
         // Debounce for A3 button (Octaver)
         if (buttonA3Pressed && (millis() - lastSelectOctaverPressTime > DEBOUNCE_DELAY_MS)) {
             lastSelectOctaverPressTime = millis();
+            Serial.println("A3 Pressed");
             #ifdef OCTAVER
             lastSelectedMode = OCTAVER_MODE;
             Serial.println("Momentary Mode: OCTAVER");
@@ -198,7 +211,6 @@ ISR(TIMER1_CAPT_vect)
     /* Construct the 10-bit input sample (0-1023) from ADC high and low bytes. */
     input_raw_sample = (ADC_high << 8) | ADCL; // Ensure ADCL is used correctly
     /*Apply master volume control to the raw input sample*/
-    volumeControl();
     input_raw_sample = map(input_raw_sample, 0, 1024, 0, pot2_value);
     // Dispatch the input sample to the active effect's audio processing function
     switch (currentActiveMode) {

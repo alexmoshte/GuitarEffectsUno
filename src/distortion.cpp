@@ -1,9 +1,6 @@
 #include "distortion.h"
 #include <Arduino.h>
 
-// Global variables (declared as extern in main.h, defined in main.cpp)
-// No need to redefine them here.
-
 /*********************************************FUNCTION DEFINITIONS****************************************************/
 void pinConfigDistortion(){
     // No specific pins for Distortion, common pins configured in main.cpp
