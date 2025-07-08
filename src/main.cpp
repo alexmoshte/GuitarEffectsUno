@@ -209,7 +209,7 @@ ISR(TIMER1_CAPT_vect)
     ADC_low = ADCL;
     ADC_high = ADCH;
     /* Construct the 10-bit input sample (0-1023) from ADC high and low bytes. */
-    input_raw_sample = (ADC_high << 8) | ADCL; // Ensure ADCL is used correctly
+    input_raw_sample = ((ADC_high << 8) | ADC_low) + 0x8000; // Ensure ADCL is used correctly
     /*Apply master volume control to the raw input sample*/
     input_raw_sample = map(input_raw_sample, 0, 1024, 0, pot2_value);
     // Dispatch the input sample to the active effect's audio processing function
@@ -235,12 +235,15 @@ ISR(TIMER1_CAPT_vect)
             break;
         case CLEAN_MODE: // Explicit CLEAN_MODE selected via effect bypass logic or momentary release
         default:
-            // Simple pass-through. Apply master volume here too for consistency.
-            int output_val_clean = input_raw_sample;
-            // output_val_clean = (int)(output_val_clean * (pot2_value / 1023.0));
-            // output_val_clean = constrain(output_val_clean, 0, 1023);
-            analogWrite(AUDIO_OUT_A, output_val_clean / 4);
-            analogWrite(AUDIO_OUT_B, map(output_val_clean % 4, 0, 3, 0, 255));
+            // // Simple pass-through. Apply master volume here too for consistency.
+            // int output_val_clean = input_raw_sample;
+            // // output_val_clean = (int)(output_val_clean * (pot2_value / 1023.0));
+            // // output_val_clean = constrain(output_val_clean, 0, 1023);
+            // analogWrite(AUDIO_OUT_A, output_val_clean / 4);
+            // analogWrite(AUDIO_OUT_B, map(output_val_clean % 4, 0, 3, 0, 255));
+        /*write the PWM output signal*/
+        OCR1AL = ((input_raw_sample + 0x8000) >> 8); // convert to unsigned, send out high byte
+        OCR1BL = input_raw_sample; // send out low byte
             break;
     }
 }
@@ -261,10 +264,12 @@ void processNormalAudio(int input_val) {
 
     // Constrain the output to the valid 10-bit range (0-1023)
     output_val = constrain(output_val, 0, 1023);
-
-    /* Write the PWM output signal using the 10-bit to dual 8-bit PWM technique */
-    analogWrite(AUDIO_OUT_A, output_val / 4); // Coarse 8 bits (MSB)
-    analogWrite(AUDIO_OUT_B, map(output_val % 4, 0, 3, 0, 255)); // Fine 2 bits (LSB)
+    // /* Write the PWM output signal using the 10-bit to dual 8-bit PWM technique */
+    // analogWrite(AUDIO_OUT_A, output_val / 4); // Coarse 8 bits (MSB)
+    // analogWrite(AUDIO_OUT_B, map(output_val % 4, 0, 3, 0, 255)); // Fine 2 bits (LSB)
+    /*write the PWM output signal*/
+    OCR1AL = ((output_val + 0x8000) >> 8); // convert to unsigned, send out high byte
+    OCR1BL = output_val; // send out low byte
 }
 
 

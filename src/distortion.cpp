@@ -57,7 +57,11 @@ void processDistortionAudio(int inputSample) {
     // Constrain the final output to the valid 10-bit range (0-1023)
     finalOutputSample = constrain(finalOutputSample, 0, 1023);
 
-    // Split for dual PWM output
-    analogWrite(AUDIO_OUT_A, finalOutputSample / 4);
-    analogWrite(AUDIO_OUT_B, map(finalOutputSample % 4, 0, 3, 0, 255));
+    // // Split for dual PWM output
+    // analogWrite(AUDIO_OUT_A, finalOutputSample / 4);
+    // analogWrite(AUDIO_OUT_B, map(finalOutputSample % 4, 0, 3, 0, 255));
+
+    /*write the PWM output signal*/
+    OCR1AL = ((finalOutputSample + 0x8000) >> 8); // convert to unsigned, send out high byte
+    OCR1BL = finalOutputSample; // send out low byte
 }

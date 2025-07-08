@@ -18,12 +18,12 @@
 #define TOGGLE 11  // Reverb sub-mode toggle switch: HIGH for REVERB_ECHO_MODE, LOW for DELAY_MODE
 
 // Effect selection buttons (momentary activation)
-#define SELECT_NORMAL_BUTTON A1 // Button for NORMAL_MODE
-#define SELECT_EFFECT_BUTTON_A2 A2 // Button for REVERB_ECHO_MODE / ECHO_MODE / DISTORTION_MODE / SINEWAVE_MODE
+#define SELECT_NORMAL_BUTTON A4 // Button for NORMAL_MODE
+#define SELECT_EFFECT_BUTTON_A2 A5 // Button for REVERB_ECHO_MODE / ECHO_MODE / DISTORTION_MODE / SINEWAVE_MODE
 #define SELECT_OCTAVER_BUTTON A3 // Button for OCTAVER_MODE
 
-#define PUSHBUTTON_1 A5 // Global Volume Up
-#define PUSHBUTTON_2 A4 // Global Volume Down
+#define PUSHBUTTON_1 A1 // Global Volume Up
+#define PUSHBUTTON_2 A2 // Global Volume Down
 
 /*Audio input/output pin definitions*/
 #define AUDIO_IN A0 // Audio input pin
