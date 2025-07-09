@@ -21,7 +21,7 @@ volatile bool effectActive = false;
 volatile EffectMode currentActiveMode = NORMAL_MODE; // Initially set, will be updated by setup
 volatile EffectMode lastSelectedMode = NORMAL_MODE;  // Stores the last non-CLEAN effect mode
 
-/*Initializing debouncing Variables*/
+/*Initializing debouncing Variables. Currently not used*/
 volatile unsigned long lastFootswitchPressTime = 0;
 volatile unsigned long lastToggleSwitchStateChange = 0;
 const unsigned long DEBOUNCE_DELAY_MS = 100;
@@ -44,28 +44,39 @@ void setup() {
     adcSetup();  // Configure ADC
     pmwSetup();  // Configure PWM and Timer1 ISR
 
+    for (int i = 0; i < MAX_DELAY; i++) {
+        delayBuffer[i] = 0;
+    }
     // Initialize specific effect modules
     #ifdef OCTAVER
     setupOctaver();
     lastSelectedMode = OCTAVER_MODE;
     #endif
 
+    #ifdef SINEWAVE
+    setupSinewave();
+    lastSelectedMode = SINEWAVE_MODE;
+    #endif
+
     #ifdef REVERB
     setUpReverb();
-    lastSelectedMode = REVERB_ECHO_MODE; // Default startup mode if REVERB compiled
-    #elif defined(ECHO)
+    lastSelectedMode = REVERB_ECHO_MODE; 
+    #endif
+
+    #ifdef ECHO
     setupEcho();
     lastSelectedMode = ECHO_MODE;
-    #elif defined(DISTORTION)
+    #endif
+
+    #ifdef DISTORTION
     setupDistortion();
     lastSelectedMode = DISTORTION_MODE;
     #elif defined(SINEWAVE)
     setupSinewave();
     lastSelectedMode = SINEWAVE_MODE;
-    #else
-    lastSelectedMode = NORMAL_MODE; // Default if no specific effect is compiled
     #endif
 
+    lastSelectedMode = NORMAL_MODE; 
     // Initial state after setup: go to lastSelectedMode unless FOOTSWITCH is pressed for CLEAN
     currentActiveMode = lastSelectedMode;
     effectActive = true; // Assume effect is active initially, can be overridden by footswitch
@@ -77,10 +88,6 @@ void loop() {
     /* --- Momentary Global Bypass (FOOTSWITCH) ---
        FOOTSWITCH is pressed (LOW), force CLEAN_MODE. Otherwise, run the last selected effect*/
     if (digitalRead(FOOTSWITCH) == LOW) { // FOOTSWITCH IS PRESSED
-        // Debounce for the initial press
-        if (millis() - lastFootswitchPressTime > DEBOUNCE_DELAY_MS) {
-            lastFootswitchPressTime = millis(); // Update timestamp only if debounced
-        }
         Serial.print("Footswitch: "); Serial.println(digitalRead(FOOTSWITCH));
         currentActiveMode = CLEAN_MODE; // Force bypass
         Serial.print("currentActiveMode: "); Serial.println(currentActiveMode);
@@ -99,37 +106,63 @@ void loop() {
 
      volumeControl(); // Check volume control push-buttons every 100 iterations
 
-    /* --- Momentary Effect Selection/Activation via A1, A2, A3 ---
+    /*EFFECT SELECTION */
     // These buttons override the FOOTSWITCH if pressed*/
-    bool buttonA1Pressed = (digitalRead(SELECT_NORMAL_BUTTON) == LOW);
-    bool buttonA2Pressed = (digitalRead(SELECT_EFFECT_BUTTON_A2) == LOW);
     bool buttonA3Pressed = (digitalRead(SELECT_OCTAVER_BUTTON) == LOW);
+    bool buttonA4Pressed = (digitalRead(SELECT_NORMAL_BUTTON) == LOW);
+    bool buttonA5Pressed = (digitalRead(SELECT_REVERB_BUTTON) == LOW);
+    bool buttonA6Pressed = (digitalRead(SELECT_ECHO_BUTTON) == LOW);
+    bool buttonA7Pressed = (digitalRead(SELECT_DISTORTION_BUTTON) == LOW);
 
     // If any selection button is pressed, it takes precedence over FOOTSWITCH and activates its effect momentarily.
-    if (buttonA1Pressed || buttonA2Pressed || buttonA3Pressed) {
-        // Debounce for A1 button
-        if (buttonA1Pressed && (millis() - lastSelectNormalPressTime > DEBOUNCE_DELAY_MS)) {
-            lastSelectNormalPressTime = millis();
-            Serial.println("A1 Pressed");
+    if (buttonA3Pressed || buttonA4Pressed || buttonA5Pressed || buttonA6Pressed || buttonA7Pressed) {
+        
+        // Handle octaver mode selection
+        if (buttonA3Pressed) {
+            Serial.println("A3 Pressed");
+            #ifdef OCTAVER
+            lastSelectedMode = OCTAVER_MODE;
+            Serial.println("Momentary Mode: OCTAVER");
+            currentActiveMode = OCTAVER_MODE;
+            #endif
+            effectActive = true;
+            digitalWrite(LED_EFFECT_ON, HIGH);
+        }
+
+        //Handle normal mode selection
+        if (buttonA4Pressed ) {
+            Serial.println("A4 Pressed");
             lastSelectedMode = NORMAL_MODE; // Set as last selected
             Serial.println("Momentary Mode: NORMAL");
             currentActiveMode = NORMAL_MODE;
             effectActive = true;
             digitalWrite(LED_EFFECT_ON, HIGH);
         }
-        // Debounce for A2 button (Reverb/Echo/Distortion/Sinewave)
-        if (buttonA2Pressed && (millis() - lastSelectEffectButtonA2PressTime > DEBOUNCE_DELAY_MS)) {
-            lastSelectEffectButtonA2PressTime = millis();
-            Serial.println("A2 Pressed");
-            #ifdef REVERB
-            lastSelectedMode = REVERB_ECHO_MODE;
-            Serial.println("Momentary Mode: REVERB (Echo)");
+        
+         //Handle reverb_echo mode selection
+        if (buttonA5Pressed ) {
+            Serial.println("A5 Pressed");
+            lastSelectedMode = REVERB_ECHO_MODE; // Set as last selected
+            Serial.println("Momentary Mode: REVERB_ECHO");
             currentActiveMode = REVERB_ECHO_MODE;
-            #elif defined(ECHO)
-            lastSelectedMode = ECHO_MODE;
+            effectActive = true;
+            digitalWrite(LED_EFFECT_ON, HIGH);
+        }
+        
+         //Handle echo mode selection
+        if (buttonA6Pressed ) {
+            Serial.println("A6 Pressed");
+            lastSelectedMode = ECHO_MODE; // Set as last selected
             Serial.println("Momentary Mode: ECHO");
             currentActiveMode = ECHO_MODE;
-            #elif defined(DISTORTION)
+            effectActive = true;
+            digitalWrite(LED_EFFECT_ON, HIGH);
+        }
+
+        // Handle distortion or sinewave mode selection
+        if (buttonA7Pressed) {
+            Serial.println("A7 Pressed");
+            #ifdef DISTORTION
             lastSelectedMode = DISTORTION_MODE;
             Serial.println("Momentary Mode: DISTORTION");
             currentActiveMode = DISTORTION_MODE;
@@ -137,18 +170,6 @@ void loop() {
             lastSelectedMode = SINEWAVE_MODE;
             Serial.println("Momentary Mode: SINEWAVE");
             currentActiveMode = SINEWAVE_MODE;
-            #endif
-            effectActive = true;
-            digitalWrite(LED_EFFECT_ON, HIGH);
-        }
-        // Debounce for A3 button (Octaver)
-        if (buttonA3Pressed && (millis() - lastSelectOctaverPressTime > DEBOUNCE_DELAY_MS)) {
-            lastSelectOctaverPressTime = millis();
-            Serial.println("A3 Pressed");
-            #ifdef OCTAVER
-            lastSelectedMode = OCTAVER_MODE;
-            Serial.println("Momentary Mode: OCTAVER");
-            currentActiveMode = OCTAVER_MODE;
             #endif
             effectActive = true;
             digitalWrite(LED_EFFECT_ON, HIGH);
@@ -161,7 +182,8 @@ void loop() {
         }
         delayWritePointer = 0;
 
-    } else { // No effect selection button is pressed
+    } 
+    else { // No effect selection button is pressed
         // If no momentary button is pressed, effectActive and currentActiveMode
         // are determined by the FOOTSWITCH state, as set at the start of loop().
         // Nothing to do here explicitly, as it was handled already.
@@ -285,9 +307,11 @@ void pinConfig (void){
     pinMode(PUSHBUTTON_2, INPUT_PULLUP);
 
     // Configure former POT pins as digital inputs for effect selection
-    pinMode(SELECT_NORMAL_BUTTON, INPUT_PULLUP);
-    pinMode(SELECT_EFFECT_BUTTON_A2, INPUT_PULLUP);
     pinMode(SELECT_OCTAVER_BUTTON, INPUT_PULLUP);
+    pinMode(SELECT_NORMAL_BUTTON, INPUT_PULLUP);
+    pinMode(SELECT_REVERB_BUTTON, INPUT_PULLUP);
+    pinMode(SELECT_ECHO_BUTTON, INPUT_PULLUP);
+    pinMode(SELECT_DISTORTION_BUTTON, INPUT_PULLUP);
 
     pinMode(LED_EFFECT_ON, OUTPUT);
 }
@@ -336,8 +360,8 @@ void pmwSetup(void){
  */
 void volumeControl(void) {
     // The push-buttons are checked now:
-counter++; //to save resources, the push-buttons are checked every 100 times.
-if(counter==100)
+counter++; //to save resources, the push-buttons are checked every 50 times.
+if(counter==50)
 {
 counter=0;
 if (!digitalRead(PUSHBUTTON_1)) {

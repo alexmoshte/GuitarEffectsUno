@@ -7,9 +7,6 @@ void pinConfigReverb(){
 }
 
 void setUpReverb(){
-    for (int i = 0; i < MAX_DELAY; i++) {
-        delayBuffer[i] = 0;
-    }
     Serial.println("Reverb Pedal Ready!");
 }
 

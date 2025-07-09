@@ -3,32 +3,36 @@
 #include <Arduino.h>
 #include <TimerOne.h> 
 
+/*Effects selectable through buttons A3 - A6*/
 #define NORMAL
 #define OCTAVER
+#define REVERB
+#define ECHO
 
-/*Enable effect by uncommenting. One at a time! */
-// #define REVERB
-// #define ECHO
+/*Only one of the two can be active. To disable distortion and enable sinewave, comment distortion.
+  In its current state, only distortion is active*/
 #define DISTORTION
-// #define SINEWAVE 
+#define SINEWAVE 
 
 /*Hardware interface resource definitions*/
 #define LED_EFFECT_ON 13
 #define FOOTSWITCH 12 // Global Momentary Bypass: Press (LOW) for CLEAN_MODE, Release (HIGH) for last selected effect
 #define TOGGLE 11  // Reverb sub-mode toggle switch: HIGH for REVERB_ECHO_MODE, LOW for DELAY_MODE
 
-// Effect selection buttons (momentary activation)
-#define SELECT_NORMAL_BUTTON A4 // Button for NORMAL_MODE
-#define SELECT_EFFECT_BUTTON_A2 A5 // Button for REVERB_ECHO_MODE / ECHO_MODE / DISTORTION_MODE / SINEWAVE_MODE
-#define SELECT_OCTAVER_BUTTON A3 // Button for OCTAVER_MODE
-
-#define PUSHBUTTON_1 A1 // Global Volume Up
-#define PUSHBUTTON_2 A2 // Global Volume Down
-
 /*Audio input/output pin definitions*/
 #define AUDIO_IN A0 // Audio input pin
 #define AUDIO_OUT_A 9 // Audio output pin A (coarse 8 bits of 10-bit output)
 #define AUDIO_OUT_B 10 // Audio output pin B (fine 2 bits of 10-bit output)
+
+#define PUSHBUTTON_1 A1 // Global Volume Up
+#define PUSHBUTTON_2 A2 // Global Volume Down
+
+// Effect selection buttons (momentary activation)
+#define SELECT_OCTAVER_BUTTON A3 // OCTAVER_MODE
+#define SELECT_NORMAL_BUTTON A4 // NORMAL_MODE
+#define SELECT_REVERB_BUTTON A5 // REVERB_ECHO_MODE 
+#define SELECT_ECHO_BUTTON A6 // ECHO_MODE 
+#define SELECT_DISTORTION_BUTTON A7 // DISTORTION_MODE / SINEWAVE_MODE
 
 /*PWM parameters definition*/
 #define PWM_FREQ 0x00FF // PWM frequency - 31.3KHz

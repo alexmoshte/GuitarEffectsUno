@@ -7,9 +7,6 @@ void pinConfigEcho(){
 }
 
 void setupEcho(){
-    for (int i = 0; i < MAX_DELAY; i++) {
-        delayBuffer[i] = 0;
-    }
     Serial.println("Echo Pedal Ready!");
 }
 
