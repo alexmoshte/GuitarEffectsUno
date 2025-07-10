@@ -53,11 +53,6 @@ void setup() {
     lastSelectedMode = OCTAVER_MODE;
     #endif
 
-    #ifdef SINEWAVE
-    setupSinewave();
-    lastSelectedMode = SINEWAVE_MODE;
-    #endif
-
     #ifdef REVERB
     setUpReverb();
     lastSelectedMode = REVERB_ECHO_MODE; 
@@ -71,7 +66,9 @@ void setup() {
     #ifdef DISTORTION
     setupDistortion();
     lastSelectedMode = DISTORTION_MODE;
-    #elif defined(SINEWAVE)
+    #endif
+
+    #ifdef SINEWAVE
     setupSinewave();
     lastSelectedMode = SINEWAVE_MODE;
     #endif
@@ -111,11 +108,12 @@ void loop() {
     bool buttonA3Pressed = (digitalRead(SELECT_OCTAVER_BUTTON) == LOW);
     bool buttonA4Pressed = (digitalRead(SELECT_NORMAL_BUTTON) == LOW);
     bool buttonA5Pressed = (digitalRead(SELECT_REVERB_BUTTON) == LOW);
-    bool buttonA6Pressed = (digitalRead(SELECT_ECHO_BUTTON) == LOW);
-    bool buttonA7Pressed = (digitalRead(SELECT_DISTORTION_BUTTON) == LOW);
+    bool button2Pressed = (digitalRead(SELECT_ECHO_BUTTON) == LOW);
+    bool button3Pressed = (digitalRead(SELECT_DISTORTION_BUTTON) == LOW);
+    bool button4Pressed = (digitalRead(SELECT_SINEWAVE_BUTTON) == LOW);
 
     // If any selection button is pressed, it takes precedence over FOOTSWITCH and activates its effect momentarily.
-    if (buttonA3Pressed || buttonA4Pressed || buttonA5Pressed || buttonA6Pressed || buttonA7Pressed) {
+    if (buttonA3Pressed || buttonA4Pressed || buttonA5Pressed || button2Pressed || button3Pressed) {
         
         // Handle octaver mode selection
         if (buttonA3Pressed) {
@@ -150,8 +148,8 @@ void loop() {
         }
         
          //Handle echo mode selection
-        if (buttonA6Pressed ) {
-            Serial.println("A6 Pressed");
+        if (button2Pressed ) {
+            Serial.println("2 Pressed");
             lastSelectedMode = ECHO_MODE; // Set as last selected
             Serial.println("Momentary Mode: ECHO");
             currentActiveMode = ECHO_MODE;
@@ -159,18 +157,22 @@ void loop() {
             digitalWrite(LED_EFFECT_ON, HIGH);
         }
 
-        // Handle distortion or sinewave mode selection
-        if (buttonA7Pressed) {
-            Serial.println("A7 Pressed");
-            #ifdef DISTORTION
+        // Handle distortion mode selection
+        if (button3Pressed) {
+            Serial.println("3 Pressed");
             lastSelectedMode = DISTORTION_MODE;
             Serial.println("Momentary Mode: DISTORTION");
             currentActiveMode = DISTORTION_MODE;
-            #elif defined(SINEWAVE)
+            effectActive = true;
+            digitalWrite(LED_EFFECT_ON, HIGH);
+        }
+
+        // Handle sinewave mode selection
+        if (button4Pressed) {
+            Serial.println("4 Pressed");
             lastSelectedMode = SINEWAVE_MODE;
             Serial.println("Momentary Mode: SINEWAVE");
             currentActiveMode = SINEWAVE_MODE;
-            #endif
             effectActive = true;
             digitalWrite(LED_EFFECT_ON, HIGH);
         }
@@ -257,15 +259,15 @@ ISR(TIMER1_CAPT_vect)
             break;
         case CLEAN_MODE: // Explicit CLEAN_MODE selected via effect bypass logic or momentary release
         default:
-            // // Simple pass-through. Apply master volume here too for consistency.
-            // int output_val_clean = input_raw_sample;
-            // // output_val_clean = (int)(output_val_clean * (pot2_value / 1023.0));
-            // // output_val_clean = constrain(output_val_clean, 0, 1023);
-            // analogWrite(AUDIO_OUT_A, output_val_clean / 4);
-            // analogWrite(AUDIO_OUT_B, map(output_val_clean % 4, 0, 3, 0, 255));
+        // Simple pass-through. Apply master volume here too for consistency.
+        int output_val_clean = input_raw_sample;
+        output_val_clean = (int)(output_val_clean * (pot2_value / 1023.0));
+        output_val_clean = constrain(output_val_clean, 0, 1023);
         /*write the PWM output signal*/
-        OCR1AL = ((input_raw_sample + 0x8000) >> 8); // convert to unsigned, send out high byte
-        OCR1BL = input_raw_sample; // send out low byte
+        OCR1AL = ((output_val_clean + 0x8000) >> 8); // convert to unsigned, send out high byte
+        OCR1BL = output_val_clean; // send out low byte
+        // analogWrite(AUDIO_OUT_A, output_val_clean / 4);
+        // analogWrite(AUDIO_OUT_B, map(output_val_clean % 4, 0, 3, 0, 255));
             break;
     }
 }
@@ -312,6 +314,11 @@ void pinConfig (void){
     pinMode(SELECT_REVERB_BUTTON, INPUT_PULLUP);
     pinMode(SELECT_ECHO_BUTTON, INPUT_PULLUP);
     pinMode(SELECT_DISTORTION_BUTTON, INPUT_PULLUP);
+    pinMode(SELECT_SINEWAVE_BUTTON, INPUT_PULLUP);
+
+    // Configure audio input and output pins
+    pinMode(AUDIO_OUT_A, OUTPUT); //PWM0 as output
+    pinMode(AUDIO_OUT_B, OUTPUT); //PWM1 as output
 
     pinMode(LED_EFFECT_ON, OUTPUT);
 }

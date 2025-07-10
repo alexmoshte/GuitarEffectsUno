@@ -8,9 +8,6 @@
 #define OCTAVER
 #define REVERB
 #define ECHO
-
-/*Only one of the two can be active. To disable distortion and enable sinewave, comment distortion.
-  In its current state, only distortion is active*/
 #define DISTORTION
 #define SINEWAVE 
 
@@ -31,8 +28,9 @@
 #define SELECT_OCTAVER_BUTTON A3 // OCTAVER_MODE
 #define SELECT_NORMAL_BUTTON A4 // NORMAL_MODE
 #define SELECT_REVERB_BUTTON A5 // REVERB_ECHO_MODE 
-#define SELECT_ECHO_BUTTON A6 // ECHO_MODE 
-#define SELECT_DISTORTION_BUTTON A7 // DISTORTION_MODE / SINEWAVE_MODE
+#define SELECT_ECHO_BUTTON 2 // ECHO_MODE 
+#define SELECT_DISTORTION_BUTTON 3 // DISTORTION_MODE
+#define SELECT_SINEWAVE_BUTTON 4 // SINEWAVE_MODE 
 
 /*PWM parameters definition*/
 #define PWM_FREQ 0x00FF // PWM frequency - 31.3KHz
